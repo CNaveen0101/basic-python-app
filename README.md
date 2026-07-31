@@ -41,3 +41,15 @@ jobs:
      with:
       name: my-application-artifact
       path: /home/ubuntu/actions-runner/_work/Narayani/Narayani/target/narayani-market-1.0.0.jar
+
+
+
+
+This is my pipeline. I installed runner in /home/ubuntu/actions-runner. But I don't know why the output generating in different location. 
+Replacing main artifact /home/runner/work/Narayani/Narayani/target/narayani-market-1.0.0.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+[INFO] The original artifact has been renamed to /home/runner/work/Narayani/Narayani/target/narayani-market-1.0.0.jar.original
+
+Run actions/upload-artifact@v7
+Warning: No files were found with the provided path: /home/ubuntu/actions-runner/_work/Narayani/Narayani/target/narayani-market-1.0.0.jar. No artifacts will be uploaded.
+
+First I am facing this issue,  not face this issue previously
