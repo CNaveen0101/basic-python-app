@@ -3,30 +3,39 @@ provider "aws" {
   
 }
 
-resource "aws_iam_user" "terrefiamuser" {
-    name = "Developer1"  
+resource "aws_iam_user" "terrefuser" {
+  name = "my_user"
+  path = "/system/"
 
-    tags = {
-      name = "Developerlabelpurpose"
-      Environment = "Dev"
-    }
+  tags = {
+    tag-key = "myuserlabel"
+  }
 }
 
-resource "aws_iam_user_login_profile" "terrefuserlogin" {
-    user = aws_iam_user.terrefiamuser.name
-    password_length = 16
-    password_reset_required = "true"
-  
+resource "aws_iam_user_login_profile" "terrefuserloginprofile" {
+    user = aws_iam_user.terrefuser.name
+    password_length = 14
+    password_reset_required = true
 }
 
-resource "aws_iam_user_policy_attachment" "terrefpasswordchangepolicy" {
-    user = aws_iam_user.terrefiamuser.name
+resource "aws_iam_user_policy_attachment" "terrefpolicyattachmentpasswordchange" {
+    user = aws_iam_user.terrefuser.name
     policy_arn = "arn:aws:iam::aws:policy/IAMUserChangePassword"
+}
+
+resource "aws_iam_user_policy_attachment" "terrefpolicyattachmentec2access" {
+    user = aws_iam_user.terrefuser.name
+    policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+}
+
+resource "aws_iam_user_policy_attachment" "terrefpolicyattachments3access" {
+    user = aws_iam_user.terrefuser.name
+    policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
   
 }
 
-resource "aws_iam_role" "terrefrole" {
-  name = "test_role"
+resource "aws_iam_role" "myterrefrole" {
+  name = "mynew_test_role"
 
   # Terraform's "jsonencode" function converts a
   # Terraform expression result to valid JSON syntax.
@@ -45,47 +54,44 @@ resource "aws_iam_role" "terrefrole" {
   })
 
   tags = {
-    tag-key = "newrole"
+    tag-key = "testrole"
   }
 }
 
-resource "aws_iam_role_policy" "test_iam_role_policy" {
-  name = "test_policy"
-  role = aws_iam_role.terrefrole.id
+resource "aws_iam_role_policy" "terrefpolicy" {
+  name = "mynew_test_policy"
+  role = aws_iam_role.myterrefrole.id
 
-  # Terraform's "jsonencode" function converts a
-  # Terraform expression result to valid JSON syntax.
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
         Action = [
-          "s3:GetObject",
-          "s3:ListObject"
+          "s3:*",
         ]
-        
+        Effect   = "Allow"
         Resource = "*"
       },
     ]
   })
 }
 
-resource "aws_iam_instance_profile" "terrefinstanceprofile" {
-    name = "ec2-test-profile"
-    role = aws_iam_role.terrefrole.name
-  
+resource "aws_iam_instance_profile" "terrefprofile" {
+  name = "test_profile"
+  role = aws_iam_role.myterrefrole.name
 }
 
 resource "aws_instance" "terrefinstance" {
-    ami = "ami-0199ac7c9fbf9ed83"
+    ami = "ami-0304448c82662e9ac"
     instance_type = "t3.micro"
     key_name = "mynewkey"
-    vpc_security_group_ids = ["sg-04f5fe61a0b53d5e1"]
-    iam_instance_profile = aws_iam_instance_profile.terrefinstanceprofile.name
+    vpc_security_group_ids = ["sg-0f042558973f95dbf"]
+    iam_instance_profile =aws_iam_instance_profile.terrefprofile.id
+    
+    tags = {
+      Name = "myinstance"
+    }
+
   
 }
-
-
-
-
