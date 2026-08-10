@@ -1,274 +1,481 @@
-I have one project idea, 
-create vpc
-create target group
-create loadbalancer
-create launch template
-create autoscaling group
-create autoscaling policy
-
-Wrote all the code in the main.tf, but point is currently no instances running, using autoscaling I create the instance and if the request comes high at the time loadbalancer distribute the traffic to my instances
-but in the loadbalancer section instance type is asking for instance id. Not sure what can I do 
-In the launch template I added the user data that template is used for one server, if iam getting high traffic loadbalancer distribute the traffic to server at the time I need to create another template or how it will work
-Autoscaling Policy i mentioned as when the cpu cross 50% immediately scale up the instance
-
 provider "aws" {
-    region = "ap-south-2"  
+  region = "ap-south-2"
 }
 
-# Create VPC
+# ============================================================
+# 1. DATA - Availability Zones
+# ============================================================
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+
+# ============================================================
+# 2. VPC
+# ============================================================
+
 resource "aws_vpc" "terrefvpc" {
-    cidr_block = ["10.0.0.0/16"]
-
-    tags = {
-      Name = "my_vpc"
-    }  
-}
-
-resource "aws_subnet" "terrefpubsub" {
-    vpc_id = aws_vpc.terrefvpc.id
-    cidr_block = ["10.0.0.0/24"]
-
-    tags = {
-      Name = "public_subnet"
-    }  
-}
-
-resource "aws_subnet" "terrefprisub" {
-    vpc_id = aws_vpc.terrefvpc.id
-    cidr_block = ["10.0.1.0/24"]
-
-    tags = {
-      Name = "private_subnet"
-    }  
-}
-
-resource "aws_internet_gateway" "terrefigw" {
-  vpc_id = aws_vpc.terrefvpc.id
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 
   tags = {
-    Name = "my-internet_gateway"
+    Name = "my-vpc"
   }
 }
 
-resource "aws_eip" "terrefeip" {
+
+# ============================================================
+# 3. PUBLIC SUBNET - AZ 1
+# ============================================================
+
+resource "aws_subnet" "public_a" {
+  vpc_id                  = aws_vpc.terrefvpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[0]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "public-subnet-a"
+  }
+}
+
+
+# ============================================================
+# 4. PUBLIC SUBNET - AZ 2
+# ============================================================
+
+resource "aws_subnet" "public_b" {
+  vpc_id                  = aws_vpc.terrefvpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[1]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "public-subnet-b"
+  }
+}
+
+
+# ============================================================
+# 5. PRIVATE SUBNET - AZ 1
+# ============================================================
+
+resource "aws_subnet" "private_a" {
+  vpc_id            = aws_vpc.terrefvpc.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = data.aws_availability_zones.available.names[0]
+
+  tags = {
+    Name = "private-subnet-a"
+  }
+}
+
+
+# ============================================================
+# 6. PRIVATE SUBNET - AZ 2
+# ============================================================
+
+resource "aws_subnet" "private_b" {
+  vpc_id            = aws_vpc.terrefvpc.id
+  cidr_block        = "10.0.4.0/24"
+  availability_zone = data.aws_availability_zones.available.names[1]
+
+  tags = {
+    Name = "private-subnet-b"
+  }
+}
+
+
+# ============================================================
+# 7. INTERNET GATEWAY
+# ============================================================
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.terrefvpc.id
+
+  tags = {
+    Name = "my-internet-gateway"
+  }
+}
+
+
+# ============================================================
+# 8. PUBLIC ROUTE TABLE
+# ============================================================
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.terrefvpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "public-route-table"
+  }
+}
+
+
+# ============================================================
+# 9. PUBLIC ROUTE TABLE ASSOCIATION - AZ 1
+# ============================================================
+
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+
+# ============================================================
+# 10. PUBLIC ROUTE TABLE ASSOCIATION - AZ 2
+# ============================================================
+
+resource "aws_route_table_association" "public_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.public.id
+}
+
+
+# ============================================================
+# 11. ELASTIC IP FOR NAT GATEWAY
+# ============================================================
+
+resource "aws_eip" "nat" {
   domain = "vpc"
 
   tags = {
-    Name = "my-eip"
+    Name = "nat-eip"
   }
 }
 
-resource "aws_nat_gateway" "terrefnatgw" {
-  allocation_id = aws_eip.terrefeip.id
-  subnet_id     = aws_subnet.terrefpubsub.id
+
+# ============================================================
+# 12. NAT GATEWAY
+# ============================================================
+
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public_a.id
+
+  depends_on = [
+    aws_internet_gateway.igw
+  ]
 
   tags = {
-    Name = "my_nat"
+    Name = "my-nat-gateway"
   }
-
-  # To ensure proper ordering, it is recommended to add an explicit dependency
-  # on the Internet Gateway for the VPC.
-  depends_on = [aws_internet_gateway.terrefigw]
 }
 
-resource "aws_route_table" "terrefpublicroutetable" {
+
+# ============================================================
+# 13. PRIVATE ROUTE TABLE
+# ============================================================
+
+resource "aws_route_table" "private" {
   vpc_id = aws_vpc.terrefvpc.id
 
   route {
-    cidr_block = ["0.0.0.0/0"]
-    gateway_id = aws_internet_gateway.terrefigw.id
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
   }
 
   tags = {
-    Name = "my_public_route_table"
+    Name = "private-route-table"
   }
 }
 
-resource "aws_route_table" "terrefpublicroutetable" {
-  vpc_id = aws_vpc.terrefvpc.id
 
-  route {
-    cidr_block = ["0.0.0.0/0"]
-    gateway_id = aws_internet_gateway.terrefigw.id
+# ============================================================
+# 14. PRIVATE ROUTE TABLE ASSOCIATION - AZ 1
+# ============================================================
+
+resource "aws_route_table_association" "private_a" {
+  subnet_id      = aws_subnet.private_a.id
+  route_table_id = aws_route_table.private.id
+}
+
+
+# ============================================================
+# 15. PRIVATE ROUTE TABLE ASSOCIATION - AZ 2
+# ============================================================
+
+resource "aws_route_table_association" "private_b" {
+  subnet_id      = aws_subnet.private_b.id
+  route_table_id = aws_route_table.private.id
+}
+
+
+# ============================================================
+# 16. ALB SECURITY GROUP
+# ============================================================
+
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-security-group"
+  description = "Security group for Application Load Balancer"
+  vpc_id      = aws_vpc.terrefvpc.id
+
+  ingress {
+    description = "Allow HTTP from Internet"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
-    Name = "my_public_route_table"
+    Name = "alb-security-group"
   }
 }
 
-resource "aws_route_table" "terrefpriroutetable" {
-  vpc_id = aws_vpc.terrefvpc.id
 
-  route {
-    cidr_block = ["0.0.0.0/0"]
-    nat_gateway_id = aws_nat_gateway_id.terrefnatgw.id
+# ============================================================
+# 17. EC2 SECURITY GROUP
+# ============================================================
+
+resource "aws_security_group" "ec2_sg" {
+  name        = "ec2-security-group"
+  description = "Security group for EC2 instances"
+  vpc_id      = aws_vpc.terrefvpc.id
+
+  # Allow application traffic only from ALB
+  ingress {
+    description     = "Allow HTTP from ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
-    Name = "my_pri_route_table"
+    Name = "ec2-security-group"
   }
 }
 
-resource "aws_route_table_association" "terrefpubrtassociation" {
-  subnet_id      = aws_subnet.terrefpubsub.id
-  route_table_id = aws_route_table.terrefpublicroutetable.id
-}
 
-resource "aws_route_table_association" "terrefprirtassociation" {
-  subnet_id      = aws_subnet.terrefprisub.id
-  route_table_id = aws_route_table.terrefpriroutetable.id
-}
-
-resource "aws_security_group" "terrefsg" {
-    name = "mynewsgforproject"
-    description = "security_group_project"
-    vpc_id = aws_vpc.terrefvpc.id
-
-    ingress {
-        description = "Allow SSH"
-        from_port = 22
-        to_port = 22
-        cidr_blocks = aws_vpc.terrefvpc.cidr_block
-        protocol = "tcp"   
-    }
-
-    ingress {
-      description = "Allow Http"
-      from_port = 80
-      to_port = 80
-      cidr_blocks = aws_vpc.terrefvpc.cidr_block
-      protocol = "tcp"  
-    }
-
-    ingress {
-      description = "Allow Https"
-      from_port = 443
-      to_port = 443
-      cidr_blocks = aws_vpc.terrefvpc.cidr_block
-      protocol = "tcp" 
-    }
-
-    ingress {
-      description = "Allow Others"
-      from_port = 8080
-      to_port = 8080
-      cidr_blocks = aws_vpc.terrefvpc.cidr_block
-      protocol = "tcp" 
-    }
-
-    egress {
-      description = "Allow all external access"
-      from_port = 0
-      to_port = 0
-      cidr_blocks = aws_vpc.terrefvpc.cidr_block
-      protocol = "-1"
-    }  
-}
-
-# Create Target Group
+# ============================================================
+# 18. TARGET GROUP
+# ============================================================
 
 resource "aws_lb_target_group" "terreftg" {
-  name     = "myapplicationtargetgroup"
+  name     = "my-application-target-group"
   port     = 80
   protocol = "HTTP"
   vpc_id   = aws_vpc.terrefvpc.id
 
   health_check {
-  path = "/"
-  port = "80"
+    enabled             = true
+    path                = "/"
+    port                = "80"
+    protocol            = "HTTP"
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+    interval            = 30
+  }
+
+  tags = {
+    Name = "my-target-group"
   }
 }
 
+
+# ============================================================
+# 19. APPLICATION LOAD BALANCER
+# ============================================================
+
 resource "aws_lb" "terrefalb" {
-  name               = "myapp-lb"
+  name               = "my-app-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.terrefsg.id]
-  subnets            = [terrefpubsub.id]
+
+  security_groups = [
+    aws_security_group.alb_sg.id
+  ]
+
+  subnets = [
+    aws_subnet.public_a.id,
+    aws_subnet.public_b.id
+  ]
+
+  tags = {
+    Name = "my-application-load-balancer"
+  }
 }
 
-resource "aws_lb_target_group_attachment" "terreftg_attachment" {
-  target_group_arn = aws_lb_target_group.terreftg.arn
-  target_id = "YOUR_EC2_INSTANCE_ID"
-  port = 80
-}
 
-resource "aws_lb_listener" "terreflistner" {
+# ============================================================
+# 20. ALB LISTENER
+# ============================================================
+
+resource "aws_lb_listener" "terreflistener" {
   load_balancer_arn = aws_lb.terrefalb.arn
- 
+
   port     = 80
   protocol = "HTTP"
- 
+
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.terreftg.arn
   }
 }
 
-# Create Launch Template
+
+# ============================================================
+# 21. LAUNCH TEMPLATE
+# ============================================================
 
 resource "aws_launch_template" "terreflaunchtemplate" {
-  name = "myapp_launchtemplate"
-  image_id = "ami-0199ac7c9fbf9ed83"
-  instance_initiated_shutdown_behavior = "terminate"
-  instance_market_options {
-    market_type = "spot"
-  }
-  instance_type = "t2.micro"
-  key_name = "mynewkey"
-  network_interfaces {
-    associate_public_ip_address = true
-  }
-  placement {
-    availability_zone = "ap-south-2a"
-  }
-  vpc_security_group_ids = [aws_security_group.terrefsg.id]
+  name = "my-app-launch-template"
 
+  # Your AMI
+  image_id = "ami-0199ac7c9fbf9ed83"
+
+  instance_type = "t2.micro"
+
+  key_name = "mynewkey"
+
+  # EC2 Security Group
+  vpc_security_group_ids = [
+    aws_security_group.ec2_sg.id
+  ]
+
+  # User Data
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+
+    yum install -y httpd
+
+    systemctl start httpd
+    systemctl enable httpd
+
+    echo "Welcome to Myapp - $(hostname)" > /var/www/html/index.html
+  EOF
+  )
+
+  # EC2 instance tags
   tag_specifications {
-    resource_type = "myinstance"
+    resource_type = "instance"
 
     tags = {
-      Name = "myapp"
+      Name = "myapp-server"
     }
   }
 
-  user_data = base64encode(<<-EOF
-        #!/bin/bash
-        yum install -y httpd
-        systemctl start httpd
-        systemctl enable httpd
- 
-        echo "Welcome to Myapp" > /var/www/html/index.html
-        EOF
-  )
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
+
+# ============================================================
+# 22. AUTO SCALING GROUP
+# ============================================================
+
 resource "aws_autoscaling_group" "terefautoscalinggroup" {
-  name                      = "my_app_autoscaling"
-  max_size                  = 3
-  min_size                  = 1
-  health_check_grace_period = 30
+  name = "my-app-autoscaling-group"
+
+  min_size         = 1
+  desired_capacity = 1
+  max_size         = 3
+
+  # EC2 instances will be created in private subnets
+  vpc_zone_identifier = [
+    aws_subnet.private_a.id,
+    aws_subnet.private_b.id
+  ]
+
+  # Use Launch Template
+  launch_template {
+    id      = aws_launch_template.terreflaunchtemplate.id
+    version = "$Latest"
+  }
+
+  # Automatically register ASG instances
+  # with the Target Group
+  target_group_arns = [
+    aws_lb_target_group.terreftg.arn
+  ]
+
+  # ASG checks instance health using ALB
   health_check_type         = "ELB"
-  desired_capacity          = 2
-  vpc_zone_identifier       = [aws_subnet.terrefpubsub.id]
+  health_check_grace_period = 120
+
   tag {
     key                 = "Name"
     value               = "ASG-App-Server"
     propagate_at_launch = true
   }
 
+  depends_on = [
+    aws_lb_listener.terreflistener
+  ]
 }
 
+
+# ============================================================
+# 23. AUTO SCALING POLICY
+# ============================================================
+
 resource "aws_autoscaling_policy" "terref_target_tracking" {
-  name                  = "cpu-target-tracking-policy"
+  name                   = "cpu-target-tracking-policy"
   autoscaling_group_name = aws_autoscaling_group.terefautoscalinggroup.name
-  policy_type           = "TargetTrackingScaling"
+
+  policy_type = "TargetTrackingScaling"
 
   target_tracking_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
     }
-    target_value = 50.0 # Target 50% CPU usage
+
+    target_value = 50.0
   }
+}
+
+
+# ============================================================
+# 24. OUTPUT - ALB DNS NAME
+# ============================================================
+
+output "alb_dns_name" {
+  description = "Application Load Balancer DNS name"
+  value       = aws_lb.terrefalb.dns_name
+}
+
+
+# ============================================================
+# 25. OUTPUT - TARGET GROUP ARN
+# ============================================================
+
+output "target_group_arn" {
+  description = "Target Group ARN"
+  value       = aws_lb_target_group.terreftg.arn
+}
+
+
+# ============================================================
+# 26. OUTPUT - AUTO SCALING GROUP NAME
+# ============================================================
+
+output "autoscaling_group_name" {
+  description = "Auto Scaling Group name"
+  value       = aws_autoscaling_group.terefautoscalinggroup.name
 }
