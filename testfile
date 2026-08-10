@@ -1,1 +1,274 @@
-Hello File
+I have one project idea, 
+create vpc
+create target group
+create loadbalancer
+create launch template
+create autoscaling group
+create autoscaling policy
+
+Wrote all the code in the main.tf, but point is currently no instances running, using autoscaling I create the instance and if the request comes high at the time loadbalancer distribute the traffic to my instances
+but in the loadbalancer section instance type is asking for instance id. Not sure what can I do 
+In the launch template I added the user data that template is used for one server, if iam getting high traffic loadbalancer distribute the traffic to server at the time I need to create another template or how it will work
+Autoscaling Policy i mentioned as when the cpu cross 50% immediately scale up the instance
+
+provider "aws" {
+    region = "ap-south-2"  
+}
+
+# Create VPC
+resource "aws_vpc" "terrefvpc" {
+    cidr_block = ["10.0.0.0/16"]
+
+    tags = {
+      Name = "my_vpc"
+    }  
+}
+
+resource "aws_subnet" "terrefpubsub" {
+    vpc_id = aws_vpc.terrefvpc.id
+    cidr_block = ["10.0.0.0/24"]
+
+    tags = {
+      Name = "public_subnet"
+    }  
+}
+
+resource "aws_subnet" "terrefprisub" {
+    vpc_id = aws_vpc.terrefvpc.id
+    cidr_block = ["10.0.1.0/24"]
+
+    tags = {
+      Name = "private_subnet"
+    }  
+}
+
+resource "aws_internet_gateway" "terrefigw" {
+  vpc_id = aws_vpc.terrefvpc.id
+
+  tags = {
+    Name = "my-internet_gateway"
+  }
+}
+
+resource "aws_eip" "terrefeip" {
+  domain = "vpc"
+
+  tags = {
+    Name = "my-eip"
+  }
+}
+
+resource "aws_nat_gateway" "terrefnatgw" {
+  allocation_id = aws_eip.terrefeip.id
+  subnet_id     = aws_subnet.terrefpubsub.id
+
+  tags = {
+    Name = "my_nat"
+  }
+
+  # To ensure proper ordering, it is recommended to add an explicit dependency
+  # on the Internet Gateway for the VPC.
+  depends_on = [aws_internet_gateway.terrefigw]
+}
+
+resource "aws_route_table" "terrefpublicroutetable" {
+  vpc_id = aws_vpc.terrefvpc.id
+
+  route {
+    cidr_block = ["0.0.0.0/0"]
+    gateway_id = aws_internet_gateway.terrefigw.id
+  }
+
+  tags = {
+    Name = "my_public_route_table"
+  }
+}
+
+resource "aws_route_table" "terrefpublicroutetable" {
+  vpc_id = aws_vpc.terrefvpc.id
+
+  route {
+    cidr_block = ["0.0.0.0/0"]
+    gateway_id = aws_internet_gateway.terrefigw.id
+  }
+
+  tags = {
+    Name = "my_public_route_table"
+  }
+}
+
+resource "aws_route_table" "terrefpriroutetable" {
+  vpc_id = aws_vpc.terrefvpc.id
+
+  route {
+    cidr_block = ["0.0.0.0/0"]
+    nat_gateway_id = aws_nat_gateway_id.terrefnatgw.id
+  }
+
+  tags = {
+    Name = "my_pri_route_table"
+  }
+}
+
+resource "aws_route_table_association" "terrefpubrtassociation" {
+  subnet_id      = aws_subnet.terrefpubsub.id
+  route_table_id = aws_route_table.terrefpublicroutetable.id
+}
+
+resource "aws_route_table_association" "terrefprirtassociation" {
+  subnet_id      = aws_subnet.terrefprisub.id
+  route_table_id = aws_route_table.terrefpriroutetable.id
+}
+
+resource "aws_security_group" "terrefsg" {
+    name = "mynewsgforproject"
+    description = "security_group_project"
+    vpc_id = aws_vpc.terrefvpc.id
+
+    ingress {
+        description = "Allow SSH"
+        from_port = 22
+        to_port = 22
+        cidr_blocks = aws_vpc.terrefvpc.cidr_block
+        protocol = "tcp"   
+    }
+
+    ingress {
+      description = "Allow Http"
+      from_port = 80
+      to_port = 80
+      cidr_blocks = aws_vpc.terrefvpc.cidr_block
+      protocol = "tcp"  
+    }
+
+    ingress {
+      description = "Allow Https"
+      from_port = 443
+      to_port = 443
+      cidr_blocks = aws_vpc.terrefvpc.cidr_block
+      protocol = "tcp" 
+    }
+
+    ingress {
+      description = "Allow Others"
+      from_port = 8080
+      to_port = 8080
+      cidr_blocks = aws_vpc.terrefvpc.cidr_block
+      protocol = "tcp" 
+    }
+
+    egress {
+      description = "Allow all external access"
+      from_port = 0
+      to_port = 0
+      cidr_blocks = aws_vpc.terrefvpc.cidr_block
+      protocol = "-1"
+    }  
+}
+
+# Create Target Group
+
+resource "aws_lb_target_group" "terreftg" {
+  name     = "myapplicationtargetgroup"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.terrefvpc.id
+
+  health_check {
+  path = "/"
+  port = "80"
+  }
+}
+
+resource "aws_lb" "terrefalb" {
+  name               = "myapp-lb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.terrefsg.id]
+  subnets            = [terrefpubsub.id]
+}
+
+resource "aws_lb_target_group_attachment" "terreftg_attachment" {
+  target_group_arn = aws_lb_target_group.terreftg.arn
+  target_id = "YOUR_EC2_INSTANCE_ID"
+  port = 80
+}
+
+resource "aws_lb_listener" "terreflistner" {
+  load_balancer_arn = aws_lb.terrefalb.arn
+ 
+  port     = 80
+  protocol = "HTTP"
+ 
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.terreftg.arn
+  }
+}
+
+# Create Launch Template
+
+resource "aws_launch_template" "terreflaunchtemplate" {
+  name = "myapp_launchtemplate"
+  image_id = "ami-0199ac7c9fbf9ed83"
+  instance_initiated_shutdown_behavior = "terminate"
+  instance_market_options {
+    market_type = "spot"
+  }
+  instance_type = "t2.micro"
+  key_name = "mynewkey"
+  network_interfaces {
+    associate_public_ip_address = true
+  }
+  placement {
+    availability_zone = "ap-south-2a"
+  }
+  vpc_security_group_ids = [aws_security_group.terrefsg.id]
+
+  tag_specifications {
+    resource_type = "myinstance"
+
+    tags = {
+      Name = "myapp"
+    }
+  }
+
+  user_data = base64encode(<<-EOF
+        #!/bin/bash
+        yum install -y httpd
+        systemctl start httpd
+        systemctl enable httpd
+ 
+        echo "Welcome to Myapp" > /var/www/html/index.html
+        EOF
+  )
+}
+
+resource "aws_autoscaling_group" "terefautoscalinggroup" {
+  name                      = "my_app_autoscaling"
+  max_size                  = 3
+  min_size                  = 1
+  health_check_grace_period = 30
+  health_check_type         = "ELB"
+  desired_capacity          = 2
+  vpc_zone_identifier       = [aws_subnet.terrefpubsub.id]
+  tag {
+    key                 = "Name"
+    value               = "ASG-App-Server"
+    propagate_at_launch = true
+  }
+
+}
+
+resource "aws_autoscaling_policy" "terref_target_tracking" {
+  name                  = "cpu-target-tracking-policy"
+  autoscaling_group_name = aws_autoscaling_group.terefautoscalinggroup.name
+  policy_type           = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 50.0 # Target 50% CPU usage
+  }
+}
