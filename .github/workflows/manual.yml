@@ -13,4 +13,4 @@ jobs:
 
     steps:
     - name: Building Docker Image
-      run: docker build -t myimage:latest .
+      run: docker build -t myimage:latest -f Dockerfile .
