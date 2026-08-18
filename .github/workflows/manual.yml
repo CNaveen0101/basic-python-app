@@ -1,0 +1,16 @@
+name: mypipeline
+
+on:
+  push:
+    branches: main
+
+  pull_request: 
+    branches: main
+    
+jobs:
+  Creating_Docker_Image:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Building Docker Image
+      run: docker build -t myimage:latest .
