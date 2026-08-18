@@ -28,5 +28,9 @@ jobs:
         context: .
         push: true
         tags: ${{ vars.DOCKERHUB_USERNAME }}/mynewapp:${{ github.run_id }}
+
+    - name: Replace Image Tag
+      run: |
+         sed -i "s|image:.*|image: ${{ vars.DOCKERHUB_USERNAME }}/mynewapp:${{ github.run_id }}|g" k8s/Deployment.yaml
       
 
