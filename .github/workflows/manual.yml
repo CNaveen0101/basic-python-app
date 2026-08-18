@@ -13,4 +13,4 @@ jobs:
 
     steps:
     - name: Building Docker Image
-      run: docker build -t myimage:latest /Dockerfile
+      run: docker build -t myimage:latest basic-python-app/Dockerfile
