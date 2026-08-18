@@ -12,5 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Code_Checkout
+      uses: actions/checkout@v4
+      
     - name: Building Docker Image
       run: docker build -t myimage:latest -f Dockerfile .
